@@ -56,7 +56,7 @@ struct RegBranch
 
     metadata::Dict{String,Any} # "error", "warning", kind etc.
 
-    function RegBranch(pkg::Pkg.Types.Project, branch::AbstractString)
+    function RegBranch(pkg, branch::AbstractString)
         new(pkg.name, pkg.version, branch, Dict{String,Any}())
     end
 end
@@ -198,7 +198,7 @@ function compress(path::AbstractString, uncompressed::Dict,
     versions::Vector{VersionNumber} = load_versions(path))
     inverted = Dict()
     for (ver, data) in uncompressed, (key, val) in data
-        val isa TOML.TYPE || (val = string(val))
+        val isa Union{Bool, DateTime, AbstractString, AbstractDict, AbstractArray} || (val = string(val))
         push!(get!(inverted, key => val, VersionNumber[]), ver)
     end
     compressed = Dict()
@@ -220,7 +220,7 @@ end
 
 # ---- End of code copied from Pkg
 
-function find_package_in_registry(pkg::Pkg.Types.Project,
+function find_package_in_registry(pkg,
                                   package_repo::AbstractString,
                                   registry_file::AbstractString,
                                   registry_path::AbstractString,
@@ -268,7 +268,7 @@ function find_package_in_registry(pkg::Pkg.Types.Project,
     return package_path, regbr
 end
 
-function update_package_file(pkg::Pkg.Types.Project,
+function update_package_file(pkg,
                              package_repo::AbstractString,
                              package_path::AbstractString)
     package_info = Dict("name" => pkg.name,
@@ -282,7 +282,7 @@ function update_package_file(pkg::Pkg.Types.Project,
     nothing
 end
 
-function update_versions_file(pkg::Pkg.Types.Project,
+function update_versions_file(pkg,
                               package_path::AbstractString,
                               regbr::RegBranch,
                               tree_hash::AbstractString)
@@ -304,7 +304,7 @@ function update_versions_file(pkg::Pkg.Types.Project,
     nothing
 end
 
-function update_deps_file(pkg::Pkg.Types.Project,
+function update_deps_file(pkg,
                           package_path::AbstractString,
                           regbr::RegBranch,
                           regdata::Vector{RegistryData})
@@ -337,7 +337,7 @@ function update_deps_file(pkg::Pkg.Types.Project,
     nothing
 end
 
-function update_compat_file(pkg::Pkg.Types.Project,
+function update_compat_file(pkg,
                             package_path::AbstractString,
                             regbr::RegBranch,
                             regdata::Vector{RegistryData},
@@ -463,7 +463,7 @@ errors or warnings that occurred.
 # Arguments
 
 * `package_repo::AbstractString`: the git repository URL for the package to be registered
-* `pkg::Pkg.Types.Project`: the parsed (Julia)Project.toml file for the package to be registered
+* `pkg`: the parsed (Julia)Project.toml file for the package to be registered
 * `tree_hash::AbstractString`: the tree hash (not commit hash) of the package revision to be registered
 
 # Keyword Arguments
@@ -475,7 +475,7 @@ errors or warnings that occurred.
 * `gitconfig::Dict=Dict()`: dictionary of configuration options for the `git` command
 """
 function register(
-    package_repo::AbstractString, pkg::Pkg.Types.Project, tree_hash::AbstractString;
+    package_repo::AbstractString, pkg, tree_hash::AbstractString;
     registry::AbstractString = DEFAULT_REGISTRY_URL,
     registry_deps::Vector{<:AbstractString} = AbstractString[],
     push::Bool = false,
@@ -587,7 +587,7 @@ end
 
 struct RegisterParams
     package_repo::AbstractString
-    pkg::Pkg.Types.Project
+    pkg
     tree_sha::AbstractString
     registry::AbstractString
     registry_deps::Vector{<:AbstractString}
@@ -595,7 +595,7 @@ struct RegisterParams
     gitconfig::Dict
 
     function RegisterParams(package_repo::AbstractString,
-                            pkg::Pkg.Types.Project,
+                            pkg,
                             tree_sha::AbstractString;
                             registry::AbstractString=DEFAULT_REGISTRY_URL,
                             registry_deps::Vector{<:AbstractString}=[],

@@ -148,11 +148,11 @@ function TOML.print(io::IO, reg::RegistryData)
     nothing
 end
 
-function package_relpath(reg::RegistryData, pkg::Pkg.Types.Project)
+function package_relpath(reg::RegistryData, pkg)
     joinpath("$(uppercase(pkg.name[1]))", pkg.name)
 end
 
-function Base.push!(reg::RegistryData, pkg::Pkg.Types.Project)
+function Base.push!(reg::RegistryData, pkg)
     reg.packages[string(pkg.uuid)] = Dict(
         "name" => pkg.name, "path" => package_relpath(reg, pkg)
     )
