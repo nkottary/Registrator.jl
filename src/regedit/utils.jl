@@ -14,6 +14,6 @@ end
 
 Generate the name for the registry branch used to register the package version.
 """
-function registration_branch(pkg::Pkg.Types.Project)
+function registration_branch(pkg)
     return "registrator/$(lowercase(pkg.name))/$(string(pkg.uuid)[1:8])/v$(pkg.version)"
 end
