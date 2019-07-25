@@ -468,6 +468,7 @@ errors or warnings that occurred.
 * `push::Bool=false`: whether to push a registration branch to `registry` for consideration
 * `gitconfig::Dict=Dict()`: dictionary of configuration options for the `git` command
 """
+#=
 function register(
     package_repo::AbstractString, pkg::Pkg.Types.Project, tree_hash::AbstractString;
     registry::AbstractString = DEFAULT_REGISTRY_URL,
@@ -576,6 +577,152 @@ function register(
     end
     return regbr
 end
+=#
+function register(
+    package_repo::AbstractString, pkg::Pkg.Types.Project, tree_hash::AbstractString;
+    registry::AbstractString = DEFAULT_REGISTRY_URL,
+    registry_deps::Vector{<:AbstractString} = AbstractString[],
+    push::Bool = false,
+    force_reset::Bool = true,
+    branch::String = registration_branch(pkg),
+    cache::RegistryCache=REGISTRY_CACHE,
+    gitconfig::Dict = Dict()
+) = register(
+    [package_repo], [pkg], [tree_hash];
+    registry=registry, registry_deps=registry_deps, push=push,
+    force_reset=force_reset, branch=branch, cache=cache, gitconfig=gitconfig
+)
+
+function register(
+    package_repos::Vector{AbstractString},
+    pkgs::Vector{Pkg.Types.Project}, tree_hashes::Vector{AbstractString};
+    registry::AbstractString = DEFAULT_REGISTRY_URL,
+    registry_deps::Vector{<:AbstractString} = AbstractString[],
+    push::Bool = false,
+    force_reset::Bool = true,
+    branch::String = registration_branch(first(pkgs)),
+    cache::RegistryCache=REGISTRY_CACHE,
+    gitconfig::Dict = Dict()
+)
+    try
+        # get up-to-date clone of registry
+        @debug("get up-to-date clone of registry")
+        registry = GitTools.normalize_url(registry)
+        registry_repo = get_registry(
+            registry; gitconfig=gitconfig,
+            force_reset=force_reset, cache=cache
+        )
+        registry_path = LibGit2.path(registry_repo)
+        isempty(registry_deps) || @debug("get up-to-date clones of registry dependencies")
+        registry_deps_paths = map(registry_deps) do registry
+            LibGit2.path(get_registry(
+                GitTools.normalize_url(registry);
+                gitconfig=gitconfig,
+                force_reset=force_reset,
+                cache=cache
+            ))
+        end
+
+        clean_registry = true
+        err = nothing
+        git = gitcmd(registry_path, gitconfig)
+        # branch registry repo
+        @debug("branch registry repo")
+        run(pipeline(`$git checkout -f master`; stdout=devnull))
+        run(pipeline(`$git branch -f $branch`; stdout=devnull))
+        run(pipeline(`$git checkout -f $branch`; stdout=devnull))
+
+        registry_file = joinpath(registry_path, "Registry.toml")
+        registry_data = parse_registry(registry_file)
+        registry_deps_data = map(registry_deps_paths) do registry_path
+            parse_registry(joinpath(registry_path, "Registry.toml"))
+        end
+        regdata = [registry_data; registry_deps_data]
+        regpaths = [registry_path; registry_deps_paths]
+        regtreesha = get_registrator_tree_sha()
+
+        for package_repo, pkg, tree_hash in zip(package_repos, pkgs, tree_hashes)
+            register_one_pkg(
+                pkg, package_repo, branch,
+                registry_file, registry_path,
+                registry_data, tree_hash,
+            )
+        end
+
+        # push -f branch to remote
+        if push
+            @debug("push -f branch to remote")
+            run(pipeline(`$git push -f -u origin $branch`; stdout=devnull))
+        else
+            @debug("skipping git push")
+        end
+
+        clean_registry = false
+    catch ex
+        println(get_backtrace(ex))
+        regbr.metadata["error"] = "Unexpected error in registration"
+    finally
+        if clean_registry
+            @debug("cleaning up possibly inconsistent registry", registry_path=showsafe(registry_path), err=showsafe(err))
+            rm(registry_path; recursive=true, force=true)
+        end
+    end
+    return regbr
+end
+
+function register_one_pkg(
+    pkg, package_repo, branch,
+    registry_file, registry_path,
+    registry_data, tree_hash,
+)
+    # get info from package registry
+    @debug("get info from package registry")
+    package_repo = GitTools.normalize_url(package_repo)
+
+    # return object
+    regbr = RegBranch(pkg, branch)
+
+    # find package in registry
+    @debug("find package in registry")
+    package_path, regbr = find_package_in_registry(pkg, package_repo,
+                                                   registry_file, registry_path,
+                                                   registry_data, regbr)
+    package_path === nothing && return regbr
+
+    # update package data: package file
+    @debug("update package data: package file")
+    update_package_file(pkg, package_repo, package_path)
+
+    # update package data: versions file
+    @debug("update package data: versions file")
+    r = update_versions_file(pkg, package_path, regbr, tree_hash)
+    r === nothing || return r
+
+    # update package data: deps file
+    @debug("update package data: deps file")
+    r = update_deps_file(pkg, package_path, regbr, regdata)
+    r === nothing || return r
+
+    # update package data: compat file
+    @debug("check compat section")
+    r = update_compat_file(pkg, package_path, regbr, regdata, regpaths)
+    r === nothing || return r
+
+    # commit changes
+    @debug("commit changes")
+    message = """
+    $(regbr.metadata["kind"]): $(pkg.name) v$(pkg.version)
+
+    UUID: $(pkg.uuid)
+    Repo: $(package_repo)
+    Tree: $(string(tree_hash))
+
+    Registrator tree SHA: $(regtreesha)
+    """
+    run(pipeline(`$git add -- $package_path`; stdout=devnull))
+    run(pipeline(`$git add -- $registry_file`; stdout=devnull))
+    run(pipeline(`$git commit -m $message`; stdout=devnull))
+end
 
 struct RegisterParams
     package_repo::AbstractString
@@ -586,19 +733,25 @@ struct RegisterParams
     push::Bool
     gitconfig::Dict
 
-    function RegisterParams(package_repo::AbstractString,
-                            pkg::Pkg.Types.Project,
-                            tree_sha::AbstractString;
-                            registry::AbstractString=DEFAULT_REGISTRY_URL,
-                            registry_deps::Vector{<:AbstractString}=[],
-                            push::Bool=false,
-                            gitconfig::Dict=Dict())
-        new(package_repo, pkg, tree_sha,
+    function RegisterParams(
+        package_repo::AbstractString,
+        pkg::Pkg.Types.Project,
+        tree_sha::AbstractString;
+        registry::AbstractString=DEFAULT_REGISTRY_URL,
+        registry_deps::Vector{<:AbstractString}=[],
+        push::Bool=false,
+        gitconfig::Dict=Dict()
+    )
+        new(
+            package_repo, pkg, tree_sha,
             registry, registry_deps,
-            push, gitconfig)
+            push, gitconfig
+        )
     end
 end
 
-register(regp::RegisterParams) = register(regp.package_repo, regp.pkg, regp.tree_sha;
-                                          registry=regp.registry, registry_deps=regp.registry_deps,
-                                          push=regp.push, gitconfig=regp.gitconfig)
+register(regp::RegisterParams) = register(
+    regp.package_repo, regp.pkg, regp.tree_sha;
+    registry=regp.registry, registry_deps=regp.registry_deps,
+    push=regp.push, gitconfig=regp.gitconfig
+)
