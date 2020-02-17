@@ -237,6 +237,12 @@ function find_package_in_registry(pkg,
         end
         package_path = joinpath(registry_path, package_data["path"])
         repo = TOML.parsefile(joinpath(package_path, "Package.toml"))["repo"]
+        if endswith(repo, ".git")
+            repo = repo[1:end-4]
+        end
+        if endswith(package_repo, ".git")
+            package_repo = package_repo[1:end-4]
+        end
         if repo != package_repo
             err = "Changing package repo URL not allowed, please submit a pull request with the URL change to the target registry and retry."
             @debug(err)
