@@ -14,5 +14,5 @@ include("Messaging.jl")
 include("RegService.jl")
 include("commentbot/CommentBot.jl")
 include("webui/WebUI.jl")
-
+include("Compress.jl")
 end # module
