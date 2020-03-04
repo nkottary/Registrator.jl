@@ -192,8 +192,6 @@ function compress_versions(pool::Vector{VersionNumber}, subset)
     compress_versions(pool, filter(in(subset), pool))
 end
 
-import Pkg.Compress.load_versions
-
 function compress(path::AbstractString, uncompressed::Dict,
     versions::Vector{VersionNumber} = load_versions(path))
     inverted = Dict()
@@ -323,7 +321,7 @@ function update_deps_file(pkg,
 
     deps_file = joinpath(package_path, "Deps.toml")
     if isfile(deps_file)
-        deps_data = Pkg.Compress.load(deps_file)
+        deps_data = Compress.load(deps_file)
     else
         deps_data = Dict()
     end
@@ -376,7 +374,7 @@ function update_compat_file(pkg,
     @debug("update package data: compat file")
     compat_file = joinpath(package_path, "Compat.toml")
     if isfile(compat_file)
-        compat_data = Pkg.Compress.load(compat_file)
+        compat_data = Compress.load(compat_file)
     else
         compat_data = Dict()
     end
