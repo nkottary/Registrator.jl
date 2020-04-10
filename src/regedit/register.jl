@@ -198,7 +198,7 @@ else
 import Pkg.Compress.load_versions
 end
 
-function load_pkg_file(path::String,
+function load_pkg_file(path::String)
     versions::Vector{VersionNumber} = load_versions(path))
     compressed = TOML.parsefile(path)
     uncompressed = Dict{VersionNumber,Dict{Any,Any}}()
