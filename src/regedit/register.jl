@@ -193,7 +193,9 @@ function compress_versions(pool::Vector{VersionNumber}, subset)
 end
 
 if VERSION >= v"1.3"
-import Pkg.Operations.load_versions
+process_versions(v::Array) = v
+process_versions(v::Dict) = collect(keys(v))
+load_versions(p) = process_versions(Pkg.Operations.load_versions)
 else
 import Pkg.Compress.load_versions
 end
