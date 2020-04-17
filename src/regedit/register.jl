@@ -195,7 +195,7 @@ end
 if VERSION >= v"1.3"
 process_versions(v::Array) = v
 process_versions(v::Dict) = collect(keys(v))
-load_versions(p) = process_versions(Pkg.Operations.load_versions)
+load_versions(p) = process_versions(Pkg.Operations.load_versions(p))
 else
 import Pkg.Compress.load_versions
 end
