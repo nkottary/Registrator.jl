@@ -66,9 +66,17 @@ function isauthorized(u::User{GitLab.User}, repo::GitLab.Project)
         @gf is_collaborator(forge, repo.owner.username, repo.name, u.user.id)
     else
         # Same as above: group membership then collaborator check.
-        ismember = @gf is_member(forge, repo.namespace.full_path, u.user.id)
-        something(ismember, false) ||
-            @gf is_collaborator(u.forge, repo.namespace.full_path, repo.name, u.user.id)
+        nspath = split(repo.namespace.full_path, "/")
+        ismember = @gf is_collaborator(u.forge, repo.namespace.full_path, repo.name, u.user.id)
+        if !something(ismember, false)
+            accns = ""
+            for ns in nspath
+                accns = joinpath(accns, ns)
+                ismember = @gf is_member(forge, accns, u.user.id)
+                something(ismember, false) && break
+            end
+        end
+        ismember
     end
     return something(hasauth, false)
 end
@@ -109,28 +117,31 @@ cloneurl(r::GitHub.Repo, is_ssh::Bool=false) = is_ssh ? r.ssh_url : r.clone_url
 cloneurl(r::GitLab.Project, is_ssh::Bool=false) = is_ssh ? r.ssh_url_to_repo : r.http_url_to_repo
 
 # Get a repo's tree hash.
+# The following method will not work for tags
+#=
 function gettreesha(::GitHubAPI, r::GitHub.Repo, ref::AbstractString)
     forge = PROVIDERS["github"].client
     branch = @gf get_branch(forge, r.owner.login, r.name, ref)
     return branch === nothing ? nothing : branch.commit.commit.tree.sha
 end
+=#
 
-function gettreesha(::GitLabAPI, r::GitLab.Project, ref::AbstractString)
+function gettreesha(::Union{GitLabAPI, GitHubAPI}, r::Union{GitLab.Project, GitHub.Repo}, ref::AbstractString)
     url = cloneurl(r)
 
-    if REGISTRY[] isa Registry{GitLabAPI}
+    #if REGISTRY[] isa Registry{GitLabAPI}
         # For private repositories, we need to insert the token into the URL.
         host = HTTP.URI(url).host
-        token = CONFIG["gitlab"]["token"]
+        token = CONFIG[isa(r, GitLab.Project) ? "gitlab" : "github"]["token"]
         url = replace(url, host => "oauth2:$token@$host")
-    end
+    #end
 
     return try
         mktempdir() do dir
             dest = joinpath(dir, r.name)
             run(`git clone $url $dest`)
-            run(`git -C $dest checkout $ref`)
-            match(r"tree (.*)", readchomp(`git -C $dest show --format=raw`))[1]
+-           run(`git -C $dest checkout $ref`)
+-           match(r"tree (.*)", readchomp(`git -C $dest show --format=raw`))[1]
         end
     catch ex
         println(get_backtrace(ex))
