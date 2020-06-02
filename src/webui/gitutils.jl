@@ -140,8 +140,8 @@ function gettreesha(::Union{GitLabAPI, GitHubAPI}, r::Union{GitLab.Project, GitH
         mktempdir() do dir
             dest = joinpath(dir, r.name)
             run(`git clone $url $dest`)
--           run(`git -C $dest checkout $ref`)
--           match(r"tree (.*)", readchomp(`git -C $dest show --format=raw`))[1]
+            run(`git -C $dest checkout $ref`)
+            match(r"tree (.*)", readchomp(`git -C $dest show --format=raw`))[1]
         end
     catch ex
         println(get_backtrace(ex))
