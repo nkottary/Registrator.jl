@@ -337,6 +337,11 @@ function make_registration_request(
         result, nothing
     catch ex
         resp = ex isa GitForge.HTTPError || ex isa GitForge.PostProcessorError ? ex.response : nothing
+	if resp === nothing
+	    @error "Unexpected error" exception = (ex, catch_backtrace())
+	    return nothing, nothing
+	end
+
         exists = ensure_already_exists(resp, 422) do data
             map(e -> get(e, "message", ""), get(data, "errors", []))
         end
